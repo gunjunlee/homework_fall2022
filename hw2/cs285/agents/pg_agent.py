@@ -39,9 +39,13 @@ class PGAgent(BaseAgent):
             and the calculated qvals/advantages that come from the seen rewards.
         """
 
-        # TODO: update the PG actor/policy using the given batch of data 
+        # update the PG actor/policy using the given batch of data
         # using helper functions to compute qvals and advantages, and
         # return the train_log obtained from updating the policy
+
+        q_values = self.calculate_q_vals(rewards_list)
+        advantages = self.estimate_advantage(observations, rewards_list, q_values, terminals)
+        train_log = self.actor.update(observations, actions, advantages, q_values)
 
         return train_log
 
@@ -51,30 +55,30 @@ class PGAgent(BaseAgent):
             Monte Carlo estimation of the Q function.
         """
 
-        # TODO: return the estimated qvals based on the given rewards, using
+        # return the estimated qvals based on the given rewards, using
             # either the full trajectory-based estimator or the reward-to-go
             # estimator
 
         # Note: rewards_list is a list of lists of rewards with the inner list
         # being the list of rewards for a single trajectory.
-        
+
         # HINT: use the helper functions self._discounted_return and
         # self._discounted_cumsum (you will need to implement these).
 
         # Case 1: trajectory-based PG
         # Estimate Q^{pi}(s_t, a_t) by the total discounted reward summed over entire trajectory
 
-        # Note: q_values should first be a 2D list where the first dimension corresponds to 
-        # trajectories and the second corresponds to timesteps, 
+        # Note: q_values should first be a 2D list where the first dimension corresponds to
+        # trajectories and the second corresponds to timesteps,
         # then flattened to a 1D numpy array.
 
         if not self.reward_to_go:
-            TODO
+            q_values = np.concatenate([self._discounted_return(rewards) for rewards in rewards_list])
 
         # Case 2: reward-to-go PG
         # Estimate Q^{pi}(s_t, a_t) by the discounted sum of rewards starting from t
         else:
-            TODO
+            q_values = np.concatenate([self._discounted_cumsum(rewards) for rewards in rewards_list])
 
         return q_values
 
@@ -91,10 +95,10 @@ class PGAgent(BaseAgent):
             ## ensure that the value predictions and q_values have the same dimensionality
             ## to prevent silent broadcasting errors
             assert values_unnormalized.ndim == q_values.ndim
-            ## TODO: values were trained with standardized q_values, so ensure
+            ## values were trained with standardized q_values, so ensure
                 ## that the predictions have the same mean and standard deviation as
                 ## the current batch of q_values
-            values = TODO
+            values = values_unnormalized * np.std(q_values) + np.mean(q_values)
 
             if self.gae_lambda is not None:
                 ## append a dummy T+1 value for simpler recursive calculation
@@ -109,6 +113,7 @@ class PGAgent(BaseAgent):
                 advantages = np.zeros(batch_size + 1)
 
                 for i in reversed(range(batch_size)):
+                    pass
                     ## TODO: recursively compute advantage estimates starting from
                         ## timestep T.
                     ## HINT: use terminals to handle edge cases. terminals[i]
@@ -119,8 +124,8 @@ class PGAgent(BaseAgent):
                 advantages = advantages[:-1]
 
             else:
-                ## TODO: compute advantage estimates using q_values, and values as baselines
-                advantages = TODO
+                ## compute advantage estimates using q_values, and values as baselines
+                advantages = q_values - values
 
         # Else, just set the advantage to [Q]
         else:
@@ -129,7 +134,7 @@ class PGAgent(BaseAgent):
         # Normalize the resulting advantages to have a mean of zero
         # and a standard deviation of one
         if self.standardize_advantages:
-            advantages = TODO
+            advantages = (advantages - np.mean(advantages)) / np.std(advantages)
 
         return advantages
 
@@ -154,6 +159,17 @@ class PGAgent(BaseAgent):
 
             Output: list where each index t contains sum_{t'=0}^T gamma^t' r_{t'}
         """
+        list_of_discounted_rewards = []
+        gamma = 1
+        for r in rewards:
+            list_of_discounted_rewards.append(gamma * r)
+            gamma *= self.gamma
+
+        list_of_discounted_returns = []
+        discounted_returns = 0
+        for dr in list_of_discounted_rewards[::-1]:
+            discounted_returns += dr
+            list_of_discounted_returns.insert(0, discounted_returns)
 
         return list_of_discounted_returns
 
@@ -163,5 +179,12 @@ class PGAgent(BaseAgent):
             -takes a list of rewards {r_0, r_1, ..., r_t', ... r_T},
             -and returns a list where the entry in each index t' is sum_{t'=t}^T gamma^(t'-t) * r_{t'}
         """
+
+        list_of_discounted_cumsums = []
+        discounted_cumsum = 0
+        for r in rewards[::-1]:
+            discounted_cumsum *= self.gamma
+            discounted_cumsum += r
+            list_of_discounted_cumsums.insert(0, discounted_cumsum)
 
         return list_of_discounted_cumsums
